@@ -5,6 +5,7 @@ const PORT = process.env.PORT || 8080;
 
 Bun.serve({
   port: PORT,
+  idleTimeout: 255,
   async fetch(req) {
     const url = new URL(req.url);
 
@@ -51,19 +52,10 @@ Bun.serve({
           console.log(`[Proxy] Messages count: ${body.messages.length}`);
         }
 
-        // Spawn Codex CLI and extract JSONL message internally
-        const stdoutText = await execCodex(messages, {
-          model,
-          temperature,
-          max_tokens,
-        });
-        const finalMessage =
-          extractMessageFromJSONL(stdoutText) || "No response received.";
-
-        const responseId = `chatcmpl-${Date.now()}`;
-        const createdTime = Math.floor(Date.now() / 1000);
-
         if (stream) {
+          const responseId = `chatcmpl-${Date.now()}`;
+          const createdTime = Math.floor(Date.now() / 1000);
+
           const streamResponse = new ReadableStream({
             async start(controller) {
               const encoder = new TextEncoder();
@@ -169,6 +161,19 @@ Bun.serve({
             },
           });
         }
+
+        // --- NON-STREAMING ---
+        // Spawn Codex CLI and extract JSONL message internally
+        const stdoutText = await execCodex(messages, {
+          model,
+          temperature,
+          max_tokens,
+        });
+        const finalMessage =
+          extractMessageFromJSONL(stdoutText) || "No response received.";
+
+        const responseId = `chatcmpl-${Date.now()}`;
+        const createdTime = Math.floor(Date.now() / 1000);
 
         // Format an OpenAI-like response object
         const openAiResponse = {
