@@ -10,6 +10,12 @@ Unlike basic bridges that spawn a new process for every request, this proxy main
 - **True Token-by-Token Streaming**: Real-time response delivery via the official V2 protocol.
 - **Minimal Latency**: Typical first-token latency of ~1.5s vs ~5s for legacy methods.
 
+## Requirements
+
+- **[Bun](https://bun.sh)**: The fast JavaScript runtime (required to run the proxy).
+- **[Codex Desktop/Mac App](https://codex.app)**: Must be installed and running on your machine.
+- **Operating System**: macOS or Windows.
+
 ## Features
 
 - **Standard API Compatibility:** Acts as a drop-in replacement for OpenAI API endpoints.
