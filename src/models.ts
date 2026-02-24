@@ -1,3 +1,5 @@
+// GENERATED CODE! DO NOT MODIFY BY HAND!
+
 import { homedir } from "os";
 import { join } from "path";
 import { readFile } from "fs/promises";

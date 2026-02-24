@@ -1,7 +1,19 @@
+// GENERATED CODE! DO NOT MODIFY BY HAND!
+
 import { getAvailableModels } from "./models";
-import { execCodex, extractMessageFromJSONL, execCodexStream } from "./codex";
+import { execCodex, execCodexStream, codexClient } from "./codex";
 
 const PORT = process.env.PORT || 8080;
+
+// Start the persistent Codex app-server
+console.log("[Proxy] Starting Codex persistent client...");
+await codexClient.start().catch((err) => {
+  console.error(
+    "[Proxy] Critical: Failed to start Codex persistent client:",
+    err,
+  );
+  process.exit(1);
+});
 
 Bun.serve({
   port: PORT,
@@ -196,9 +208,10 @@ Bun.serve({
           })) {
             if (req.signal.aborted) break;
             if (event.type === "message") {
-              finalMessage = event.text; // Store the final matched reply
+              finalMessage += event.text;
             } else if (event.type === "error") {
               finalMessage = `[Error] ${event.text}`;
+              break;
             }
           }
         } catch (err) {
