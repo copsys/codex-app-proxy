@@ -23,7 +23,18 @@ Unlike basic bridges that spawn a new process for every request, this proxy main
 - **High-Performance Streaming:** Native support for `stream: true` using Server-Sent Events (SSE).
 - **V2 Protocol Integration:** Uses the latest `app-server` JSON-RPC protocol for deep engine integration.
 - **Robust Error Handling:** Correctly passes through engine-level notifications like usage limits and reasoning deltas.
-- **Model Discovery:** Automatically discovers your available models whether you're running Windows or macOS.
+- **Model Discovery**: Automatically discovers your available models whether you're running Windows or macOS.
+
+## Supported Parameters
+
+The proxy supports the following OpenAI-compatible parameters in the `/v1/chat/completions` request body:
+
+- **`model`** (string): The slug of the Codex model to use (e.g., `gpt-5.1`, `gpt-5.3-codex`). Defaults to the first available model.
+- **`messages`** (array): The standard array of message objects with `role` and `content`.
+- **`stream`** (boolean): Whether to stream the response using Server-Sent Events.
+- **`temperature`** (number): Controls randomness (passed to the engine).
+- **`max_tokens`** (number): Limits the length of the generated response.
+- **`reasoning_effort`** (string): For models with reasoning capabilities (e.g., `low`, `medium`, `high`).
 
 ## Quick Start
 
