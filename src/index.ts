@@ -1,5 +1,5 @@
 import { getAvailableModels } from "./models";
-import { execCodex, extractMessageFromJSONL } from "./codex";
+import { execCodex, extractMessageFromJSONL, execCodexStream } from "./codex";
 
 const PORT = process.env.PORT || 8080;
 
@@ -58,46 +58,88 @@ Bun.serve({
         const createdTime = Math.floor(Date.now() / 1000);
 
         if (stream) {
-          // Implement standard Server-Sent Events (SSE) for OpenAI streaming
-          const streamPayload = {
-            id: responseId,
-            object: "chat.completion.chunk",
-            created: createdTime,
-            model: model,
-            choices: [
-              {
-                index: 0,
-                delta: { content: finalMessage },
-                finish_reason: null,
-              },
-            ],
-          };
-
-          const streamEndPayload = {
-            id: responseId,
-            object: "chat.completion.chunk",
-            created: createdTime,
-            model: model,
-            choices: [
-              {
-                index: 0,
-                delta: {},
-                finish_reason: "stop",
-              },
-            ],
-          };
-
-          const encoder = new TextEncoder();
           const streamResponse = new ReadableStream({
-            start(controller) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(streamPayload)}\n\n`),
-              );
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(streamEndPayload)}\n\n`),
-              );
-              controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-              controller.close();
+            async start(controller) {
+              const encoder = new TextEncoder();
+              try {
+                for await (const event of execCodexStream(messages, {
+                  model,
+                  temperature,
+                  max_tokens,
+                })) {
+                  if (event.type === "reasoning") {
+                    const payload = {
+                      id: responseId,
+                      object: "chat.completion.chunk",
+                      created: createdTime,
+                      model: model,
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { reasoning_content: event.text },
+                          finish_reason: null,
+                        },
+                      ],
+                    };
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                    );
+                  } else if (event.type === "message") {
+                    const payload = {
+                      id: responseId,
+                      object: "chat.completion.chunk",
+                      created: createdTime,
+                      model: model,
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { content: event.text },
+                          finish_reason: null,
+                        },
+                      ],
+                    };
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                    );
+                  } else if (event.type === "error") {
+                    const payload = {
+                      id: responseId,
+                      object: "chat.completion.chunk",
+                      created: createdTime,
+                      model: model,
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { content: `\n\n[Error] ${event.text}` },
+                          finish_reason: "stop",
+                        },
+                      ],
+                    };
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                    );
+                  }
+                }
+
+                // Final stream end boundary
+                const streamEndPayload = {
+                  id: responseId,
+                  object: "chat.completion.chunk",
+                  created: createdTime,
+                  model: model,
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                };
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify(streamEndPayload)}\n\n`,
+                  ),
+                );
+                controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+              } catch (err) {
+                console.error("[Proxy] Stream Error:", err);
+              } finally {
+                controller.close();
+              }
             },
           });
 

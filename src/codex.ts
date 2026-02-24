@@ -101,6 +101,103 @@ export async function execCodex(
   return stdoutText;
 }
 
+export type CodexStreamEvent =
+  | { type: "reasoning"; text: string }
+  | { type: "message"; text: string }
+  | { type: "error"; text: string };
+
+export async function* execCodexStream(
+  messages: Message[],
+  options: CodexOptions = {},
+): AsyncGenerator<CodexStreamEvent, void, unknown> {
+  const binaryPath = getCodexBinaryPath();
+  const model = options.model;
+
+  if (!model) {
+    throw new Error("[Proxy] Model must be provided to execCodex");
+  }
+
+  let prompt = "";
+  for (const msg of messages) {
+    const roleName = msg.role.toUpperCase();
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
+    prompt += `[${roleName}]\n${content}\n\n`;
+  }
+  prompt = prompt.trim() || "Please help me.";
+
+  const args = [
+    binaryPath,
+    "exec",
+    "--skip-git-repo-check",
+    "--json",
+    "-m",
+    model,
+  ];
+
+  if (options.temperature !== undefined)
+    args.push("-c", `temperature=${options.temperature}`);
+  if (options.max_tokens !== undefined)
+    args.push("-c", `max_tokens=${options.max_tokens}`);
+
+  args.push(prompt);
+
+  console.log(
+    `[Proxy] Streaming codex with ${messages.length} messages, model: ${model}`,
+  );
+
+  const proc = spawn(args, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const reader = proc.stdout.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let newlineIdx;
+      while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIdx).trim();
+        buffer = buffer.slice(newlineIdx + 1);
+
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === "item.completed" && parsed.item) {
+            if (parsed.item.type === "reasoning" && parsed.item.text) {
+              yield { type: "reasoning", text: parsed.item.text };
+            } else if (
+              parsed.item.type === "agent_message" &&
+              parsed.item.text
+            ) {
+              yield { type: "message", text: parsed.item.text };
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors on individual lines
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    const stderrText = await new Response(proc.stderr).text();
+    console.error(`[Proxy] codex exec failed: ${stderrText}`);
+    yield { type: "error", text: `[Error executing Codex] ${stderrText}` };
+  }
+}
+
 /**
  * Parses the RAW JSONL output returned by `codex exec --json` to extract just the AI's final text message.
  */
