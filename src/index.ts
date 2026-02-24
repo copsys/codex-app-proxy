@@ -45,6 +45,12 @@ Bun.serve({
 
         const stream = body.stream === true;
 
+        console.log(`[Proxy] Received POST /v1/chat/completions`);
+        console.log(`[Proxy] Request body keys:`, Object.keys(body));
+        if (body.messages) {
+          console.log(`[Proxy] Messages count: ${body.messages.length}`);
+        }
+
         // Spawn Codex CLI and extract JSONL message internally
         const stdoutText = await execCodex(messages, {
           model,
@@ -66,79 +72,91 @@ Bun.serve({
                   model,
                   temperature,
                   max_tokens,
+                  signal: req.signal,
                 })) {
-                  if (event.type === "reasoning") {
-                    const payload = {
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created: createdTime,
-                      model: model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { reasoning_content: event.text },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-                    );
-                  } else if (event.type === "message") {
-                    const payload = {
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created: createdTime,
-                      model: model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { content: event.text },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-                    );
-                  } else if (event.type === "error") {
-                    const payload = {
-                      id: responseId,
-                      object: "chat.completion.chunk",
-                      created: createdTime,
-                      model: model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { content: `\n\n[Error] ${event.text}` },
-                          finish_reason: "stop",
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-                    );
+                  if (req.signal.aborted) break;
+
+                  try {
+                    if (event.type === "reasoning") {
+                      const payload = {
+                        id: responseId,
+                        object: "chat.completion.chunk",
+                        created: createdTime,
+                        model: model,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: { reasoning_content: event.text },
+                            finish_reason: null,
+                          },
+                        ],
+                      };
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                      );
+                    } else if (event.type === "message") {
+                      const payload = {
+                        id: responseId,
+                        object: "chat.completion.chunk",
+                        created: createdTime,
+                        model: model,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: { content: event.text },
+                            finish_reason: null,
+                          },
+                        ],
+                      };
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                      );
+                    } else if (event.type === "error") {
+                      const payload = {
+                        id: responseId,
+                        object: "chat.completion.chunk",
+                        created: createdTime,
+                        model: model,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: { content: `\n\n[Error] ${event.text}` },
+                            finish_reason: "stop",
+                          },
+                        ],
+                      };
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                      );
+                    }
+                  } catch (e) {
+                    // Client disconnected or stream closed
+                    break;
                   }
                 }
 
-                // Final stream end boundary
-                const streamEndPayload = {
-                  id: responseId,
-                  object: "chat.completion.chunk",
-                  created: createdTime,
-                  model: model,
-                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-                };
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify(streamEndPayload)}\n\n`,
-                  ),
-                );
-                controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                if (!req.signal.aborted) {
+                  // Final stream end boundary
+                  const streamEndPayload = {
+                    id: responseId,
+                    object: "chat.completion.chunk",
+                    created: createdTime,
+                    model: model,
+                    choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                  };
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify(streamEndPayload)}\n\n`,
+                    ),
+                  );
+                  controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                }
               } catch (err) {
                 console.error("[Proxy] Stream Error:", err);
               } finally {
-                controller.close();
+                try {
+                  controller.close();
+                } catch (e) {}
               }
             },
           });

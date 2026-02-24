@@ -29,6 +29,7 @@ export interface CodexOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  signal?: AbortSignal;
 }
 
 export async function execCodex(
@@ -87,11 +88,17 @@ export async function execCodex(
     stderr: "pipe",
   });
 
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => {
+      proc.kill();
+    });
+  }
+
   const stdoutText = await new Response(proc.stdout).text();
   const stderrText = await new Response(proc.stderr).text();
   const exitCode = await proc.exited;
 
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && (!options.signal || !options.signal.aborted)) {
     console.error(
       `[Proxy] codex exec failed with code ${exitCode}:\n${stderrText}`,
     );
@@ -153,12 +160,19 @@ export async function* execCodexStream(
     stderr: "pipe",
   });
 
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => {
+      proc.kill();
+    });
+  }
+
   const reader = proc.stdout.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
   try {
     while (true) {
+      if (options.signal?.aborted) break;
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -188,10 +202,13 @@ export async function* execCodexStream(
     }
   } finally {
     reader.releaseLock();
+    try {
+      proc.kill();
+    } catch (_) {}
   }
 
   const exitCode = await proc.exited;
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && (!options.signal || !options.signal.aborted)) {
     const stderrText = await new Response(proc.stderr).text();
     console.error(`[Proxy] codex exec failed: ${stderrText}`);
     yield { type: "error", text: `[Error executing Codex] ${stderrText}` };
