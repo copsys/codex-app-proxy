@@ -1,0 +1,14 @@
+{
+  "name": "codex-local-proxy",
+  "version": "1.0.0",
+  "description": "A local HTTP proxy for the Codex app to expose standard OpenAI chat completion API.",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
