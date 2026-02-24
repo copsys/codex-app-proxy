@@ -55,3 +55,11 @@ curl -N -X POST http://localhost:8080/v1/chat/completions \
 ## Architecture
 
 This project uses a typed `CodexClient` that manages a persistent `codex app-server` background process. Communication happens over a high-speed JSON-RPC channel on `stdio`, ensuring that the model state remains warm and ready for immediate inference.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get involved.
