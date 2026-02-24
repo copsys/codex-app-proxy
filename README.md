@@ -13,8 +13,9 @@ Unlike basic bridges that spawn a new process for every request, this proxy main
 ## Requirements
 
 - **[Bun](https://bun.sh)**: The fast JavaScript runtime (required to run the proxy).
-- **[Codex Desktop/Mac App](https://codex.app)**: Must be installed and running on your machine.
-- **Operating System**: macOS or Windows.
+- **[Codex Desktop/Mac App](https://codex.app)**: Must be installed and running on your machine (macOS/Windows).
+- **[Codex CLI](https://github.com/openai/codex-cli)**: Required for **Linux** users. The `codex` binary must be in your `PATH`.
+- **Operating System**: macOS, Windows, or Linux.
 
 ## Features
 
