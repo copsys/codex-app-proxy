@@ -20,11 +20,38 @@ export function getCodexBinaryPath(): string {
   }
 }
 
+export interface Message {
+  role: string;
+  content: string | any;
+}
+
+export interface CodexOptions {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
 export async function execCodex(
-  prompt: string,
-  model: string = "gpt-5.3-codex",
+  messages: Message[],
+  options: CodexOptions = {},
 ): Promise<string> {
   const binaryPath = getCodexBinaryPath();
+  const model = options.model || "gpt-5.3-codex";
+
+  // Format the entire conversation history into a single prompt for the CLI
+  let prompt = "";
+  for (const msg of messages) {
+    const roleName = msg.role.toUpperCase();
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
+    prompt += `[${roleName}]\n${content}\n\n`;
+  }
+  prompt = prompt.trim();
+  if (!prompt) {
+    prompt = "Please help me.";
+  }
 
   // Provide the prompt safely to the non-interactive CLI.
   // We use --json to get structured output back so we can parse it.
@@ -35,11 +62,20 @@ export async function execCodex(
     "--json",
     "-m",
     model,
-    prompt,
   ];
 
+  // Map advanced options to codex config overrides if provided
+  if (options.temperature !== undefined) {
+    args.push("-c", `temperature=${options.temperature}`);
+  }
+  if (options.max_tokens !== undefined) {
+    args.push("-c", `max_tokens=${options.max_tokens}`);
+  }
+
+  args.push(prompt);
+
   console.log(
-    `[Proxy] Executing codex for prompt: "${prompt.substring(0, 50)}..." with model: ${model}`,
+    `[Proxy] Executing codex with ${messages.length} messages, model: ${model}`,
   );
 
   const proc = spawn(args, {

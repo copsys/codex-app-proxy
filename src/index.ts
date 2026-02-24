@@ -36,19 +36,15 @@ Bun.serve({
         const body = (await req.json()) as any;
         const model = body.model || "gpt-5.3-codex";
         const messages = body.messages || [];
-
-        // Simple approach: Extract the last user message to pass as the prompt
-        let prompt = "Please help me.";
-        if (messages.length > 0) {
-          const lastMessage = messages[messages.length - 1];
-          prompt =
-            typeof lastMessage.content === "string"
-              ? lastMessage.content
-              : JSON.stringify(lastMessage.content);
-        }
+        const temperature = body.temperature;
+        const max_tokens = body.max_tokens;
 
         // Spawn Codex CLI and extract JSONL message internally
-        const stdoutText = await execCodex(prompt, model);
+        const stdoutText = await execCodex(messages, {
+          model,
+          temperature,
+          max_tokens,
+        });
         const finalMessage = extractMessageFromJSONL(stdoutText);
 
         // Format an OpenAI-like response object
