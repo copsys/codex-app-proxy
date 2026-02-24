@@ -1,25 +1,22 @@
 # Codex Local Proxy
 
-A lightweight, seamless HTTP proxy powered by Bun that allows you to use your locally installed Codex models from any IDE, Editor, or Tool that supports standard OpenAI programmatic endpoints (like `/v1/chat/completions`).
+A high-performance, lightweight HTTP proxy powered by Bun that allows you to use your locally installed Codex models from any IDE, Editor, or Tool that supports standard OpenAI programmatic endpoints (like `/v1/chat/completions`).
 
-It securely and invisibly leverages your current Codex cache and desktop app installation.
+## Why this Proxy?
 
-## Use Cases
+Unlike basic bridges that spawn a new process for every request, this proxy maintains a **persistent connection** to the Codex engine. This results in:
 
-Instead of relying on remote services that enforce tight rate limiting, quota restrictions, or challenging cloudflare protections, you can host your own bridge directly referencing your installed models.
+- **Zero Startup Overhead**: The second request is as fast as the first.
+- **True Token-by-Token Streaming**: Real-time response delivery via the official V2 protocol.
+- **Minimal Latency**: Typical first-token latency of ~1.5s vs ~5s for legacy methods.
 
-- **Any AI IDE**: Drop `http://localhost:8080/v1` as the base endpoint into Cursor, VS Code, or JetBrains AI assistants.
-- **Local Scripts**: Write scripts using standard OpenAI libraries (Python or Node) that talk transparently to your local premium agentic coding models like `gpt-5.3-codex`.
-- **Cross-Platform**: The proxy seamlessly discovers your available models whether you're running Windows or macOS.
+## Features
 
-### Features Supported
-
-The proxy acts as a fully compliant `/v1/chat/completions` endpoint and invisibly maps the following advanced features to the local Codex Engine:
-
-- **Conversation History:** Passes your full `messages` block (including `system`, `user`, and `assistant` contexts) so the model retains conversation memory.
-- **System Prompts:** Honors `{"role": "system"}` instructions natively.
-- **Stream Support:** Supports `stream: true` (Server-Sent Events) which is required for maximum compatibility with many AI IDEs like Cursor and library clients.
-- **Model Parameters:** Automatically passes through `temperature` and `max_tokens` when specified in the request payload.
+- **Standard API Compatibility:** Acts as a drop-in replacement for OpenAI API endpoints.
+- **High-Performance Streaming:** Native support for `stream: true` using Server-Sent Events (SSE).
+- **V2 Protocol Integration:** Uses the latest `app-server` JSON-RPC protocol for deep engine integration.
+- **Robust Error Handling:** Correctly passes through engine-level notifications like usage limits and reasoning deltas.
+- **Model Discovery:** Automatically discovers your available models whether you're running Windows or macOS.
 
 ## Quick Start
 
@@ -32,15 +29,29 @@ The proxy acts as a fully compliant `/v1/chat/completions` endpoint and invisibl
    bun start
    ```
 
-By default, the proxy server listens on `http://localhost:8080`. You can test it instantaneously from your terminal:
+By default, the proxy server listens on `http://localhost:8080`.
+
+## Testing the Proxy
+
+You can test the streaming functionality instantaneously from your terminal:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -N -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-5.3-codex",
+    "model": "gpt-5.1",
     "messages": [
-      {"role": "user", "content": "Hello! What can you do?"}
-    ]
+      {"role": "user", "content": "Write a one-line poem about speed."}
+    ],
+    "stream": true
   }'
 ```
+
+## Configuration
+
+- **Port**: Set via `PORT` environment variable (defaults to 8080).
+- **Models**: The proxy automatically queries your local Codex installation for available model slugs.
+
+## Architecture
+
+This project uses a typed `CodexClient` that manages a persistent `codex app-server` background process. Communication happens over a high-speed JSON-RPC channel on `stdio`, ensuring that the model state remains warm and ready for immediate inference.
