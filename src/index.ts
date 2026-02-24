@@ -60,6 +60,8 @@ Bun.serve({
             async start(controller) {
               const encoder = new TextEncoder();
               try {
+                let chunkCount = 0;
+                let firstChunkTime = 0;
                 for await (const event of execCodexStream(messages, {
                   model,
                   temperature,
@@ -67,6 +69,14 @@ Bun.serve({
                   signal: req.signal,
                 })) {
                   if (req.signal.aborted) break;
+
+                  if (chunkCount === 0) {
+                    firstChunkTime = Date.now();
+                    console.log(
+                      `[Proxy] First stream chunk emitted after ${firstChunkTime - createdTime * 1000}ms`,
+                    );
+                  }
+                  chunkCount++;
 
                   try {
                     if (event.type === "reasoning") {
@@ -123,9 +133,14 @@ Bun.serve({
                     }
                   } catch (e) {
                     // Client disconnected or stream closed
+                    console.log(`[Proxy] Client disconnected during stream`);
                     break;
                   }
                 }
+
+                console.log(
+                  `[Proxy] Finished streaming ${chunkCount} chunks. Elapsed: ${Date.now() - createdTime * 1000}ms`,
+                );
 
                 if (!req.signal.aborted) {
                   // Final stream end boundary
@@ -163,14 +178,34 @@ Bun.serve({
         }
 
         // --- NON-STREAMING ---
-        // Spawn Codex CLI and extract JSONL message internally
-        const stdoutText = await execCodex(messages, {
-          model,
-          temperature,
-          max_tokens,
-        });
-        const finalMessage =
-          extractMessageFromJSONL(stdoutText) || "No response received.";
+        // Consume the stream internally so we don't trigger the 40s timeout lock
+        console.log(
+          `[Proxy] Executing codex internally via stream buffer for non-streaming request...`,
+        );
+        let finalMessage = "";
+
+        try {
+          for await (const event of execCodexStream(messages, {
+            model,
+            temperature,
+            max_tokens,
+            signal: req.signal,
+          })) {
+            if (req.signal.aborted) break;
+            if (event.type === "message") {
+              finalMessage = event.text; // Store the final matched reply
+            } else if (event.type === "error") {
+              finalMessage = `[Error] ${event.text}`;
+            }
+          }
+        } catch (err) {
+          console.error("[Proxy] Internal Stream Error:", err);
+          finalMessage = "Internal Server Error during execution.";
+        }
+
+        if (!finalMessage) {
+          finalMessage = "No response received.";
+        }
 
         const responseId = `chatcmpl-${Date.now()}`;
         const createdTime = Math.floor(Date.now() / 1000);
