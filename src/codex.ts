@@ -36,7 +36,11 @@ export async function execCodex(
   options: CodexOptions = {},
 ): Promise<string> {
   const binaryPath = getCodexBinaryPath();
-  const model = options.model || "gpt-5.3-codex";
+  const model = options.model;
+
+  if (!model) {
+    throw new Error("[Proxy] Model must be provided to execCodex");
+  }
 
   // Format the entire conversation history into a single prompt for the CLI
   let prompt = "";

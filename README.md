@@ -12,6 +12,15 @@ Instead of relying on remote services that enforce tight rate limiting, quota re
 - **Local Scripts**: Write scripts using standard OpenAI libraries (Python or Node) that talk transparently to your local premium agentic coding models like `gpt-5.3-codex`.
 - **Cross-Platform**: The proxy seamlessly discovers your available models whether you're running Windows or macOS.
 
+### Features Supported
+
+The proxy acts as a fully compliant `/v1/chat/completions` endpoint and invisibly maps the following advanced features to the local Codex Engine:
+
+- **Conversation History:** Passes your full `messages` block (including `system`, `user`, and `assistant` contexts) so the model retains conversation memory.
+- **System Prompts:** Honors `{"role": "system"}` instructions natively.
+- **Stream Support:** Supports `stream: true` (Server-Sent Events) which is required for maximum compatibility with many AI IDEs like Cursor and library clients.
+- **Model Parameters:** Automatically passes through `temperature` and `max_tokens` when specified in the request payload.
+
 ## Quick Start
 
 1. Install dependencies:

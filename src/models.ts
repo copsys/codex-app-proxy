@@ -2,42 +2,10 @@ import { homedir } from "os";
 import { join } from "path";
 import { readFile } from "fs/promises";
 
-export interface ModelFeature {
-  effort?: string;
-  description?: string;
-}
-
 export interface CodexModel {
   slug: string;
-  display_name: string;
-  description: string;
-  default_reasoning_level?: string;
-  supported_reasoning_levels?: ModelFeature[];
-  context_window?: number;
+  [key: string]: any;
 }
-
-// Fallback models in case the models_cache.json cannot be read
-const FALLBACK_MODELS: CodexModel[] = [
-  {
-    slug: "gpt-5.3-codex",
-    display_name: "gpt-5.3-codex",
-    description: "Latest frontier agentic coding model.",
-    context_window: 272000,
-  },
-  {
-    slug: "gpt-4o",
-    display_name: "gpt-4o",
-    description:
-      "General purpose model (Note: May not be supported depending on account type).",
-    context_window: 128000,
-  },
-  {
-    slug: "o1",
-    display_name: "o1",
-    description: "Optimized reasoning model.",
-    context_window: 200000,
-  },
-];
 
 export async function getAvailableModels(): Promise<CodexModel[]> {
   try {
@@ -51,11 +19,11 @@ export async function getAvailableModels(): Promise<CodexModel[]> {
       return parsed.models;
     }
   } catch (error) {
-    console.warn(
-      "[Proxy] Failed to read models_cache.json, using fallback models.",
+    console.error(
+      "[Proxy] Failed to read models_cache.json. Ensure Codex is installed and you've run it at least once.",
       (error as any).message,
     );
   }
 
-  return FALLBACK_MODELS;
+  return [];
 }
