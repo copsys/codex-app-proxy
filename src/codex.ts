@@ -29,6 +29,7 @@ export interface CodexOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  reasoning_effort?: string;
   signal?: AbortSignal;
 }
 
@@ -75,6 +76,9 @@ export async function execCodex(
   }
   if (options.max_tokens !== undefined) {
     args.push("-c", `max_tokens=${options.max_tokens}`);
+  }
+  if (options.reasoning_effort !== undefined) {
+    args.push("-c", `reasoning_effort="${options.reasoning_effort}"`);
   }
 
   args.push(prompt);
@@ -148,6 +152,8 @@ export async function* execCodexStream(
     args.push("-c", `temperature=${options.temperature}`);
   if (options.max_tokens !== undefined)
     args.push("-c", `max_tokens=${options.max_tokens}`);
+  if (options.reasoning_effort !== undefined)
+    args.push("-c", `reasoning_effort="${options.reasoning_effort}"`);
 
   args.push(prompt);
 

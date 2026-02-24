@@ -43,6 +43,7 @@ Bun.serve({
         const messages = body.messages || [];
         const temperature = body.temperature;
         const max_tokens = body.max_tokens;
+        const reasoning_effort = body.reasoning_effort;
 
         const stream = body.stream === true;
 
@@ -66,6 +67,7 @@ Bun.serve({
                   model,
                   temperature,
                   max_tokens,
+                  reasoning_effort,
                   signal: req.signal,
                 })) {
                   if (req.signal.aborted) break;
@@ -189,6 +191,7 @@ Bun.serve({
             model,
             temperature,
             max_tokens,
+            reasoning_effort,
             signal: req.signal,
           })) {
             if (req.signal.aborted) break;
