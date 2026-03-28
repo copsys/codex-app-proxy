@@ -57,11 +57,12 @@ Bun.serve({
         const max_tokens = body.max_tokens;
         const reasoning_effort = body.reasoning_effort;
         const tools = Array.isArray(body.tools) ? body.tools : undefined;
-        const tool_choice = body.tool_choice;
         // Default to BrowserOS-style strict tool mode whenever tools are supplied,
         // unless callers explicitly disable it with browseros_mode: false.
         const browseros_mode =
           tools && tools.length > 0 ? body.browseros_mode !== false : false;
+        const tool_choice =
+          body.tool_choice ?? (browseros_mode ? "required" : undefined);
 
         const stream = body.stream === true;
 

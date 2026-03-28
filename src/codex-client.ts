@@ -294,6 +294,9 @@ export class CodexClient {
                 }
                 eventQueue.push({ type: "tool_calls", calls: toolCalls });
               } else {
+                console.warn(
+                  `[CodexClient] Tools provided but no tool calls parsed. Assistant preview: ${accumulatedText.slice(0, 300).replace(/\s+/g, " ")}`,
+                );
                 // No tool calls found, emit as plain message
                 eventQueue.push({ type: "message", text: accumulatedText });
               }

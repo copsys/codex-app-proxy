@@ -75,27 +75,77 @@ export type CodexStreamEvent =
  */
 export function parseToolCalls(text: string): ParsedToolCall[] {
   const calls: ParsedToolCall[] = [];
-  const regex = /<tool_call>([\s\S]*?)<\/tool_call>/g;
-  let match;
+  const seen = new Set<string>();
   let callIndex = 0;
-  while ((match = regex.exec(text)) !== null) {
+
+  const pushCall = (raw: any) => {
+    const name = raw?.name || raw?.toolName || raw?.function?.name || "";
+    const argsRaw =
+      raw?.arguments ?? raw?.input ?? raw?.parameters ?? raw?.function?.arguments;
+    if (!name) return;
+    const args =
+      typeof argsRaw === "string"
+        ? argsRaw
+        : JSON.stringify(argsRaw ?? {});
+    const key = `${name}::${args}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    calls.push({
+      id: `call_${Date.now()}_${callIndex++}`,
+      type: "function",
+      function: {
+        name,
+        arguments: args,
+      },
+    });
+  };
+
+  // Format 1: explicit <tool_call>...</tool_call> blocks.
+  const taggedRegex = /<tool_call>([\s\S]*?)<\/tool_call>/g;
+  let match;
+  while ((match = taggedRegex.exec(text)) !== null) {
     try {
-      const parsed = JSON.parse(match[1].trim());
-      calls.push({
-        id: `call_${Date.now()}_${callIndex++}`,
-        type: "function",
-        function: {
-          name: parsed.name || parsed.function?.name || "",
-          arguments:
-            typeof parsed.arguments === "string"
-              ? parsed.arguments
-              : JSON.stringify(parsed.arguments ?? parsed.parameters ?? {}),
-        },
-      });
+      pushCall(JSON.parse(match[1].trim()));
     } catch {
-      // Skip malformed tool calls
+      // Ignore malformed block.
     }
   }
+
+  // Format 2: JSON fenced blocks that contain a single call, call list, or tool_calls.
+  const fencedJsonRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+  while ((match = fencedJsonRegex.exec(text)) !== null) {
+    const candidate = match[1].trim();
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) pushCall(item);
+      } else if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+        for (const item of parsed.tool_calls) pushCall(item);
+      } else {
+        pushCall(parsed);
+      }
+    } catch {
+      // Not valid JSON; ignore.
+    }
+  }
+
+  // Format 3: whole response is a JSON object/array describing tool calls.
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) pushCall(item);
+      } else if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+        for (const item of parsed.tool_calls) pushCall(item);
+      } else {
+        pushCall(parsed);
+      }
+    } catch {
+      // Not parseable as JSON; ignore.
+    }
+  }
+
   return calls;
 }
 
