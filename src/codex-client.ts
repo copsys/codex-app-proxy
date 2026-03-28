@@ -157,14 +157,14 @@ export class CodexClient {
     }
 
     if (hasTools && options.browseros_mode) {
-      const browserOsToolModeInstructions =
+      const browserOSToolModeInstructions =
         `\n\n## BrowserOS Tool Execution Mode\n\n` +
         `You are running as a tool-calling planner inside BrowserOS. ` +
         `You can and must control the browser by emitting tool calls. ` +
         `Do not claim you cannot access or control the browser/environment. ` +
         `When a browser action is requested, respond with tool calls only (and brief coordinating text only when necessary). ` +
         `If an action needs multiple steps, emit the next required tool call(s) for the current step.\n`;
-      baseInstructions = (baseInstructions || "") + browserOsToolModeInstructions;
+      baseInstructions = (baseInstructions || "") + browserOSToolModeInstructions;
     }
 
     // --- Format conversation messages into prompt ---
