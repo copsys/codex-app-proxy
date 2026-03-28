@@ -121,7 +121,12 @@ export class CodexClient {
 
   async *chatCompletionStream(
     messages: Message[],
-    options: { model: string; tools?: any[]; tool_choice?: any },
+    options: {
+      model: string;
+      tools?: any[];
+      tool_choice?: any;
+      browseros_mode?: boolean;
+    },
   ): AsyncGenerator<CodexStreamEvent> {
     const hasTools = options.tools && options.tools.length > 0;
 
@@ -149,6 +154,19 @@ export class CodexClient {
         options.tool_choice,
       );
       baseInstructions = (baseInstructions || "") + toolBlock;
+    }
+
+    if (hasTools && options.browseros_mode) {
+      const browserOSToolModeInstructions =
+        `\n\n## BrowserOS Tool Execution Mode\n\n` +
+        `You are running as a tool-calling planner inside BrowserOS. ` +
+        `You can and must control the browser by emitting tool calls. ` +
+        `Do not claim you cannot access or control the browser/environment. ` +
+        `If the request is actionable with available tools, your response MUST include at least one <tool_call> block. ` +
+        `Prefer tool-call-only output for action steps. ` +
+        `For shopping workflows, adding products to cart is permitted; avoid checkout/payment unless explicitly requested. ` +
+        `If an action needs multiple steps, emit only the next required tool call(s) for the current step.\n`;
+      baseInstructions = (baseInstructions || "") + browserOSToolModeInstructions;
     }
 
     // --- Format conversation messages into prompt ---
@@ -276,6 +294,9 @@ export class CodexClient {
                 }
                 eventQueue.push({ type: "tool_calls", calls: toolCalls });
               } else {
+                console.warn(
+                  `[CodexClient] Tools provided but no tool calls parsed. Assistant preview: ${accumulatedText.slice(0, 300).replace(/\s+/g, " ")}`,
+                );
                 // No tool calls found, emit as plain message
                 eventQueue.push({ type: "message", text: accumulatedText });
               }

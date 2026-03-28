@@ -56,8 +56,13 @@ Bun.serve({
         const temperature = body.temperature;
         const max_tokens = body.max_tokens;
         const reasoning_effort = body.reasoning_effort;
-        const tools = body.tools;
-        const tool_choice = body.tool_choice;
+        const tools = Array.isArray(body.tools) ? body.tools : undefined;
+        // Default to BrowserOS-style strict tool mode whenever tools are supplied,
+        // unless callers explicitly disable it with browseros_mode: false.
+        const browseros_mode =
+          tools && tools.length > 0 ? body.browseros_mode !== false : false;
+        const tool_choice =
+          body.tool_choice ?? (browseros_mode ? "required" : undefined);
 
         const stream = body.stream === true;
 
@@ -68,6 +73,16 @@ Bun.serve({
         }
         if (tools) {
           console.log(`[Proxy] Tools count: ${tools.length}`);
+        }
+        if (tools && tools.length > 0) {
+          console.log(
+            `[Proxy] BrowserOS mode: ${browseros_mode ? "enabled" : "disabled"}`,
+          );
+          if (body.browseros_mode === undefined && browseros_mode) {
+            console.log(
+              `[Proxy] BrowserOS mode auto-enabled because tools were provided`,
+            );
+          }
         }
 
         if (stream) {
@@ -88,6 +103,7 @@ Bun.serve({
                   signal: req.signal,
                   tools,
                   tool_choice,
+                  browseros_mode,
                 })) {
                   if (req.signal.aborted) break;
 
@@ -269,6 +285,7 @@ Bun.serve({
             signal: req.signal,
             tools,
             tool_choice,
+            browseros_mode,
           })) {
             if (req.signal.aborted) break;
             if (event.type === "message") {
