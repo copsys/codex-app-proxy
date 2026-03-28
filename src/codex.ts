@@ -105,7 +105,19 @@ export function parseToolCalls(text: string): ParsedToolCall[] {
  * are available and the expected output format.
  */
 export function buildToolInstructions(tools: any[], tool_choice?: any): string {
-  let block = `\n\n## Available Tools\n\nYou have access to the following tools to perform actions. You MUST use these tools to fulfill the user's request. Do NOT describe steps or give instructions — instead, call the appropriate tool.\n\nTo call a tool, output one or more tool calls in this exact format (you may output multiple for parallel execution):\n<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>\n\nIMPORTANT RULES:\n- ALWAYS use tool calls to act. NEVER respond with step-by-step instructions when a tool can do the job.\n- You can call multiple tools in a single response.\n- After a tool call, wait for the result before proceeding.\n- If the user asks you to navigate somewhere, use the navigate tool. If they ask you to click, use the click tool. Etc.\n\nHere are the tools:\n\n`;
+  let block =
+    `\n\n## Available Tools\n\n` +
+    `You are an agentic planner operating through external tools. ` +
+    `When tools are available, your next action MUST be emitted as tool calls, not prose refusals.\n\n` +
+    `Tool call output format (required):\n` +
+    `<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>\n\n` +
+    `IMPORTANT RULES:\n` +
+    `- If a user request is actionable with provided tools, emit one or more <tool_call> blocks.\n` +
+    `- Do not say you cannot access the browser/environment when browser tools are provided.\n` +
+    `- Keep normal text minimal. Prefer tool-call-only responses for action steps.\n` +
+    `- After tool results are returned, emit the next tool call(s) needed to continue.\n` +
+    `- For commerce tasks, adding an item to cart is allowed; do not attempt checkout/payment unless user explicitly requests it.\n\n` +
+    `Here are the tools:\n\n`;
 
   for (const tool of tools) {
     if (tool.type === "function" && tool.function) {
@@ -114,6 +126,16 @@ export function buildToolInstructions(tools: any[], tool_choice?: any): string {
       if (fn.description) block += `${fn.description}\n`;
       if (fn.parameters) {
         block += `Parameters: ${JSON.stringify(fn.parameters)}\n`;
+      }
+      block += `\n`;
+    } else if (tool?.name) {
+      // Support alternate tool schemas used by some providers/agents.
+      block += `### ${tool.name}\n`;
+      if (tool.description) block += `${tool.description}\n`;
+      if (tool.input_schema) {
+        block += `Parameters: ${JSON.stringify(tool.input_schema)}\n`;
+      } else if (tool.parameters) {
+        block += `Parameters: ${JSON.stringify(tool.parameters)}\n`;
       }
       block += `\n`;
     }

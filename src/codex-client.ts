@@ -162,8 +162,10 @@ export class CodexClient {
         `You are running as a tool-calling planner inside BrowserOS. ` +
         `You can and must control the browser by emitting tool calls. ` +
         `Do not claim you cannot access or control the browser/environment. ` +
-        `When a browser action is requested, respond with tool calls only (and brief coordinating text only when necessary). ` +
-        `If an action needs multiple steps, emit the next required tool call(s) for the current step.\n`;
+        `If the request is actionable with available tools, your response MUST include at least one <tool_call> block. ` +
+        `Prefer tool-call-only output for action steps. ` +
+        `For shopping workflows, adding products to cart is permitted; avoid checkout/payment unless explicitly requested. ` +
+        `If an action needs multiple steps, emit only the next required tool call(s) for the current step.\n`;
       baseInstructions = (baseInstructions || "") + browserOSToolModeInstructions;
     }
 
