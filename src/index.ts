@@ -56,6 +56,8 @@ Bun.serve({
         const temperature = body.temperature;
         const max_tokens = body.max_tokens;
         const reasoning_effort = body.reasoning_effort;
+        const tools = body.tools;
+        const tool_choice = body.tool_choice;
 
         const stream = body.stream === true;
 
@@ -63,6 +65,9 @@ Bun.serve({
         console.log(`[Proxy] Request body keys:`, Object.keys(body));
         if (body.messages) {
           console.log(`[Proxy] Messages count: ${body.messages.length}`);
+        }
+        if (tools) {
+          console.log(`[Proxy] Tools count: ${tools.length}`);
         }
 
         if (stream) {
@@ -81,6 +86,8 @@ Bun.serve({
                   max_tokens,
                   reasoning_effort,
                   signal: req.signal,
+                  tools,
+                  tool_choice,
                 })) {
                   if (req.signal.aborted) break;
 
@@ -110,6 +117,60 @@ Bun.serve({
                       controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
                       );
+                    } else if (event.type === "tool_calls") {
+                      // Emit tool_calls in OpenAI streaming delta format
+                      const toolCallsDeltas = event.calls.map((tc, idx) => ({
+                        index: idx,
+                        id: tc.id,
+                        type: "function" as const,
+                        function: {
+                          name: tc.function.name,
+                          arguments: tc.function.arguments,
+                        },
+                      }));
+                      const payload = {
+                        id: responseId,
+                        object: "chat.completion.chunk",
+                        created: createdTime,
+                        model: model,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: {
+                              role: "assistant",
+                              tool_calls: toolCallsDeltas,
+                            },
+                            finish_reason: null,
+                          },
+                        ],
+                      };
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+                      );
+                      // Emit finish with tool_calls reason
+                      const finishPayload = {
+                        id: responseId,
+                        object: "chat.completion.chunk",
+                        created: createdTime,
+                        model: model,
+                        choices: [
+                          {
+                            index: 0,
+                            delta: {},
+                            finish_reason: "tool_calls",
+                          },
+                        ],
+                      };
+                      controller.enqueue(
+                        encoder.encode(
+                          `data: ${JSON.stringify(finishPayload)}\n\n`,
+                        ),
+                      );
+                      controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                      try {
+                        controller.close();
+                      } catch {}
+                      return; // Don't emit the normal stop sequence
                     } else if (event.type === "message") {
                       const payload = {
                         id: responseId,
@@ -197,6 +258,7 @@ Bun.serve({
           `[Proxy] Executing codex internally via stream buffer for non-streaming request...`,
         );
         let finalMessage = "";
+        let finalToolCalls: any[] | null = null;
 
         try {
           for await (const event of execCodexStream(messages, {
@@ -205,10 +267,14 @@ Bun.serve({
             max_tokens,
             reasoning_effort,
             signal: req.signal,
+            tools,
+            tool_choice,
           })) {
             if (req.signal.aborted) break;
             if (event.type === "message") {
               finalMessage += event.text;
+            } else if (event.type === "tool_calls") {
+              finalToolCalls = event.calls;
             } else if (event.type === "error") {
               finalMessage = `[Error] ${event.text}`;
               break;
@@ -219,7 +285,7 @@ Bun.serve({
           finalMessage = "Internal Server Error during execution.";
         }
 
-        if (!finalMessage) {
+        if (!finalMessage && !finalToolCalls) {
           finalMessage = "No response received.";
         }
 
@@ -227,6 +293,18 @@ Bun.serve({
         const createdTime = Math.floor(Date.now() / 1000);
 
         // Format an OpenAI-like response object
+        const assistantMessage: any = {
+          role: "assistant",
+          content: finalToolCalls ? finalMessage || null : finalMessage,
+        };
+
+        let finishReason = "stop";
+
+        if (finalToolCalls && finalToolCalls.length > 0) {
+          assistantMessage.tool_calls = finalToolCalls;
+          finishReason = "tool_calls";
+        }
+
         const openAiResponse = {
           id: responseId,
           object: "chat.completion",
@@ -235,11 +313,8 @@ Bun.serve({
           choices: [
             {
               index: 0,
-              message: {
-                role: "assistant",
-                content: finalMessage,
-              },
-              finish_reason: "stop",
+              message: assistantMessage,
+              finish_reason: finishReason,
             },
           ],
           usage: {

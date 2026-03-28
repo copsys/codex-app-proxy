@@ -3,6 +3,9 @@ import {
   getCodexBinaryPath,
   type Message,
   type CodexStreamEvent,
+  type ParsedToolCall,
+  parseToolCalls,
+  buildToolInstructions,
 } from "./codex";
 
 // Official V2 Types
@@ -118,17 +121,73 @@ export class CodexClient {
 
   async *chatCompletionStream(
     messages: Message[],
-    options: { model: string },
+    options: { model: string; tools?: any[]; tool_choice?: any },
   ): AsyncGenerator<CodexStreamEvent> {
-    // Format full prompt
-    let fullPrompt = "";
+    const hasTools = options.tools && options.tools.length > 0;
+
+    // --- Extract system messages into baseInstructions ---
+    const systemParts: string[] = [];
+    const nonSystemMessages: Message[] = [];
     for (const msg of messages) {
-      const roleName = msg.role.toUpperCase();
-      const content =
-        typeof msg.content === "string"
-          ? msg.content
-          : JSON.stringify(msg.content);
-      fullPrompt += `[${roleName}]\n${content}\n\n`;
+      if (msg.role === "system") {
+        const content =
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content);
+        systemParts.push(content);
+      } else {
+        nonSystemMessages.push(msg);
+      }
+    }
+
+    let baseInstructions = systemParts.join("\n\n") || undefined;
+
+    // --- If tools are provided, inject tool definitions into instructions ---
+    if (hasTools) {
+      const toolBlock = buildToolInstructions(
+        options.tools!,
+        options.tool_choice,
+      );
+      baseInstructions = (baseInstructions || "") + toolBlock;
+    }
+
+    // --- Format conversation messages into prompt ---
+    let fullPrompt = "";
+    for (const msg of nonSystemMessages) {
+      if (msg.role === "tool") {
+        // Tool result message from BrowserOS
+        const toolCallId = (msg as any).tool_call_id || "unknown";
+        const toolName = (msg as any).name || "unknown";
+        const content =
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content);
+        fullPrompt += `[TOOL_RESULT] (tool_call_id: ${toolCallId}, name: ${toolName})\n${content}\n\n`;
+      } else if (msg.role === "assistant" && (msg as any).tool_calls) {
+        // Assistant message that contained tool calls (history from previous turns)
+        const toolCalls = (msg as any).tool_calls as any[];
+        let assistantContent = "";
+        if (msg.content) {
+          assistantContent +=
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content);
+          assistantContent += "\n";
+        }
+        for (const tc of toolCalls) {
+          if (tc.type === "function" && tc.function) {
+            assistantContent += `<tool_call>{"name": "${tc.function.name}", "arguments": ${tc.function.arguments}}</tool_call>\n`;
+          }
+        }
+        fullPrompt += `[ASSISTANT]\n${assistantContent}\n`;
+      } else {
+        const roleName = msg.role.toUpperCase();
+        const content =
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content);
+        fullPrompt += `[${roleName}]\n${content}\n\n`;
+      }
     }
     fullPrompt = (fullPrompt.trim() || "Please help me.") + "\n\n[ASSISTANT]\n";
 
@@ -137,6 +196,7 @@ export class CodexClient {
       cwd: process.cwd(),
       experimentalRawEvents: false,
       persistExtendedHistory: false,
+      ...(baseInstructions ? { baseInstructions } : {}),
     };
 
     const startRes = (await this.request(
@@ -166,10 +226,9 @@ export class CodexClient {
         input: input,
         cwd: process.cwd(),
         approvalPolicy: "never",
-        sandboxPolicy: {
-          type: "readOnly",
-          access: { type: "fullAccess" },
-        },
+        sandboxPolicy: hasTools
+          ? { type: "readOnly", access: { type: "fullAccess" } }
+          : { type: "dangerFullAccess" },
         model: options.model,
         effort: "none" as any,
         summary: "none" as any,
@@ -180,6 +239,7 @@ export class CodexClient {
       let turnDone = false;
       const eventQueue: CodexStreamEvent[] = [];
       let resolveNext: (() => void) | null = null;
+      let accumulatedText = "";
 
       const cleanup = this.onEvent((event) => {
         if (event.type === "notification") {
@@ -187,7 +247,12 @@ export class CodexClient {
 
           if (method === "item/agentMessage/delta") {
             const p = params as AgentMessageDeltaNotification;
-            eventQueue.push({ type: "message", text: p.delta });
+            accumulatedText += p.delta;
+            if (!hasTools) {
+              // When no tools, stream text directly
+              eventQueue.push({ type: "message", text: p.delta });
+            }
+            // When tools present, we buffer and parse at the end
           } else if (
             method === "item/reasoning/textDelta" ||
             method === "item/reasoning/summaryTextDelta"
@@ -195,6 +260,26 @@ export class CodexClient {
             const p = params as ReasoningTextDeltaNotification;
             eventQueue.push({ type: "reasoning", text: p.delta });
           } else if (method === "turn/completed") {
+            // If tools are present, check for tool calls in accumulated text
+            if (hasTools && accumulatedText) {
+              const toolCalls = parseToolCalls(accumulatedText);
+              if (toolCalls.length > 0) {
+                // Strip tool_call tags from text, emit remaining as content
+                const textWithoutToolCalls = accumulatedText
+                  .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "")
+                  .trim();
+                if (textWithoutToolCalls) {
+                  eventQueue.push({
+                    type: "message",
+                    text: textWithoutToolCalls,
+                  });
+                }
+                eventQueue.push({ type: "tool_calls", calls: toolCalls });
+              } else {
+                // No tool calls found, emit as plain message
+                eventQueue.push({ type: "message", text: accumulatedText });
+              }
+            }
             turnDone = true;
           } else if (method === "error") {
             const p = params as ErrorNotification;
@@ -202,12 +287,62 @@ export class CodexClient {
               p.error?.message || (p as any).message || "Unknown error";
             eventQueue.push({ type: "error", text: errMsg });
             turnDone = true;
+          } else if (method === "commandExecution/requestApproval") {
+            // Auto-approve command executions for agentic behavior
+            const approvalId = params?.approvalId;
+            if (approvalId) {
+              console.log(
+                `[CodexClient] Auto-approving command execution: ${params?.command || "unknown"}`,
+              );
+              this.request("commandExecution/sendApproval", {
+                approvalId,
+                decision: "accept",
+              }).catch(() => {});
+            }
+          } else if (method === "fileChange/requestApproval") {
+            // Auto-approve file changes for agentic behavior
+            const approvalId = params?.approvalId;
+            if (approvalId) {
+              console.log(`[CodexClient] Auto-approving file change`);
+              this.request("fileChange/sendApproval", {
+                approvalId,
+                decision: "accept",
+              }).catch(() => {});
+            }
+          } else if (method === "commandExecution/outputDelta") {
+            // Surface command output as message text
+            if (params?.delta) {
+              accumulatedText += params.delta;
+              if (!hasTools) {
+                eventQueue.push({ type: "message", text: params.delta });
+              }
+            }
           }
         } else if (event.type === "agent_message_content_delta") {
-          eventQueue.push({ type: "message", text: event.delta });
+          accumulatedText += event.delta;
+          if (!hasTools) {
+            eventQueue.push({ type: "message", text: event.delta });
+          }
         } else if (event.type === "reasoning_content_delta") {
           eventQueue.push({ type: "reasoning", text: event.delta });
         } else if (event.type === "task_complete") {
+          if (hasTools && accumulatedText) {
+            const toolCalls = parseToolCalls(accumulatedText);
+            if (toolCalls.length > 0) {
+              const textWithoutToolCalls = accumulatedText
+                .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "")
+                .trim();
+              if (textWithoutToolCalls) {
+                eventQueue.push({
+                  type: "message",
+                  text: textWithoutToolCalls,
+                });
+              }
+              eventQueue.push({ type: "tool_calls", calls: toolCalls });
+            } else {
+              eventQueue.push({ type: "message", text: accumulatedText });
+            }
+          }
           turnDone = true;
         }
 
