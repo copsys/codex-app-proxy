@@ -38,6 +38,7 @@ export interface CodexOptions {
   signal?: AbortSignal;
   tools?: any[];
   tool_choice?: any;
+  browseros_mode?: boolean;
 }
 
 export interface ParsedToolCall {
@@ -141,5 +142,6 @@ export async function* execCodexStream(
     model: options.model,
     tools: options.tools,
     tool_choice: options.tool_choice,
+    browseros_mode: options.browseros_mode,
   });
 }

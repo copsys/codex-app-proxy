@@ -35,6 +35,8 @@ The proxy supports the following OpenAI-compatible parameters in the `/v1/chat/c
 - **`temperature`** (number): Controls randomness (passed to the engine).
 - **`max_tokens`** (number): Limits the length of the generated response.
 - **`reasoning_effort`** (string): For models with reasoning capabilities (e.g., `low`, `medium`, `high`).
+- **`tools` / `tool_choice`**: Standard OpenAI tool-calling fields used by agentic clients.
+- **`browseros_mode`** (boolean): Optional mode for BrowserOS-like agentic clients. When `true` (and tools are provided), the proxy adds stronger tool-execution instructions so the model emits tool calls instead of environment-limitation refusals.
 
 ## Quick Start
 
@@ -69,6 +71,15 @@ curl -N -X POST http://localhost:8080/v1/chat/completions \
 
 - **Port**: Set via `PORT` environment variable (defaults to 8080).
 - **Models**: The proxy automatically queries your local Codex installation for available model slugs.
+
+### BrowserOS Configuration
+
+If your BrowserOS agent sends tool definitions but the model replies with text like _"I’m unable to control the browser from this environment."_, set:
+
+- `browseros_mode: true` in your `/v1/chat/completions` request body
+- keep sending `tools` and (optionally) `tool_choice`
+
+This proxy mode is designed to use the proxy only for LLM/provider behavior while BrowserOS continues to execute the actual browser tools on its side.
 
 ## Architecture
 

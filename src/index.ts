@@ -58,6 +58,7 @@ Bun.serve({
         const reasoning_effort = body.reasoning_effort;
         const tools = body.tools;
         const tool_choice = body.tool_choice;
+        const browseros_mode = body.browseros_mode === true;
 
         const stream = body.stream === true;
 
@@ -68,6 +69,9 @@ Bun.serve({
         }
         if (tools) {
           console.log(`[Proxy] Tools count: ${tools.length}`);
+        }
+        if (browseros_mode) {
+          console.log(`[Proxy] BrowserOS mode enabled`);
         }
 
         if (stream) {
@@ -88,6 +92,7 @@ Bun.serve({
                   signal: req.signal,
                   tools,
                   tool_choice,
+                  browseros_mode,
                 })) {
                   if (req.signal.aborted) break;
 
@@ -269,6 +274,7 @@ Bun.serve({
             signal: req.signal,
             tools,
             tool_choice,
+            browseros_mode,
           })) {
             if (req.signal.aborted) break;
             if (event.type === "message") {
